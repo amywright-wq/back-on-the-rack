@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Back on the Rack - Guidelines and Item Submission</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="config.js"></script>
 <style>
 :root {
   --brown:    #7B4A2D;
@@ -591,6 +592,14 @@ async function submitForm() {
       '<p style="font-size:.85rem;color:var(--brown-lt);margin-bottom:.8rem;text-align:left">Preferred drop-off: <strong>' + escHtml(dropOff) + '</strong></p>' +
       '<table><thead><tr><th>#</th><th>Brand</th><th>Size</th><th>Description</th><th>Price</th></tr></thead><tbody>' + rows + '</tbody></table>';
 
+    // Sync to dashboard via Supabase (works from any device)
+    try {
+      await saveToInventory(sellerName, selectedDate, items);
+    } catch (err) {
+      console.error('Dashboard sync failed:', err.message);
+      // Don't block the success screen — Formspree email already sent
+    }
+
     document.getElementById('app').style.display = 'none';
     document.getElementById('success').style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -601,6 +610,61 @@ async function submitForm() {
     alert('Sorry, something went wrong. Please try again or contact Amy on 0467 004 555.');
     console.error(err);
   }
+}
+
+// ── SAVE TO INVENTORY DASHBOARD (Supabase) ───────────────────────────────────
+async function saveToInventory(sellerName, dropOffDate, formItems) {
+  const H = {
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+    'Content-Type': 'application/json',
+  };
+  const base = SUPABASE_URL + '/rest/v1/inventory';
+
+  // Fetch existing codes to find the next IT-XXX number
+  let nextNum = 1;
+  try {
+    const r = await fetch(base + '?select=code', { headers: H });
+    if (r.ok) {
+      const rows = await r.json();
+      const itPat = /^IT-(\d+)$/;
+      const nums  = rows
+        .map(row => { const m = (row.code || '').match(itPat); return m ? parseInt(m[1]) : 0; })
+        .filter(n => n > 0);
+      if (nums.length) nextNum = Math.max(...nums) + 1;
+    }
+  } catch {} // silently continue — code will still be unique via timestamp fallback
+
+  const dateStr = (dropOffDate instanceof Date)
+    ? dropOffDate.toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+
+  const rows = formItems.map(item => {
+    const sp = parseFloat(item.price) || 0;
+    const cp = 15;
+    const commAmt = +(sp * cp / 100).toFixed(2);
+    return {
+      id:             'form-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      code:           'IT-' + String(nextNum++).padStart(3, '0'),
+      name:           item.description,
+      size:           item.size     || null,
+      category:       null,
+      owner:          sellerName,
+      date_added:     dateStr,
+      status:         'Available',
+      sale_price:     sp,
+      commission_pct: cp,
+      commission_amt: commAmt,
+      final_payout:   +(sp - commAmt).toFixed(2),
+    };
+  });
+
+  const res = await fetch(base, {
+    method: 'POST',
+    headers: { ...H, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 // ── RESET ──
