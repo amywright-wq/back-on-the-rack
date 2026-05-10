@@ -911,7 +911,10 @@ async function cycleStatus(id) {
   }
   try {
     await db.upsert(toRow(item));
+    const savedPage = currentPage;
     render(); // refresh stats + charts
+    currentPage = savedPage;
+    renderTable();
   } catch (err) {
     item.status = prev; // revert on failure
     alert('Could not update status: ' + err.message);
@@ -944,7 +947,10 @@ async function cycleClothingType(id) {
   }
   try {
     await db.upsert(toRow(item));
+    const savedPage = currentPage;
     render();
+    currentPage = savedPage;
+    renderTable();
   } catch (err) {
     item.clothingType = prev;
     alert('Could not update item type: ' + err.message);
@@ -967,7 +973,10 @@ async function cycleRackStatus(id) {
   }
   try {
     await db.upsert(toRow(item));
+    const savedPage = currentPage;
     render();
+    currentPage = savedPage;
+    renderTable();
   } catch (err) {
     item.category = prev;
     alert('Could not update rack status: ' + err.message);
